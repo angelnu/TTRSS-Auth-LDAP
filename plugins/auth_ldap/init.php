@@ -222,7 +222,7 @@ class Auth_Ldap extends Plugin implements IAuthModule {
      * @param string $password User's password
      * @return boolean
      */
-    function authenticate($login, $password) {
+    function authenticate($login, $password, $service = '') {
         if ($login && $password) {
 
             if (!function_exists('ldap_connect')) {
