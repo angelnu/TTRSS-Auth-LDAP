@@ -1,46 +1,33 @@
-Tiny Tiny RSS Contributed files
-===============================
+# Tiny Tiny RSS LDAP authentication
 
-This repository contains files which had been removed from trunk for
-whatever reason (usually it's because I can't properly test their functionality).
+This plugin adds authentication with LDAP.
 
 
-Usage instructions
-=================
+## Installation
 
 First of app, make sure you have `php-ldap` installed.
 For Debian/Ubuntu users, just do
 
 `sudo apt-get install php-ldap`
 
+Git clone to `plugins.local/auth_ldap`
 
-Now, open the `config.php` file in your TT-RSS directory.
 
-First, add the plugin to the list of enabled plugins:
+## Configuration
 
-```php
-/// append auth_ldap to the list
-define('PLUGINS', 'auth_ldap, auth_internal, note');
-```
+Setup variables via `.env`:
 
-Second, add the following lines to the file and fill in the details of your ldap installation:
-
-```php
-// Required parameters:
-define('LDAP_AUTH_SERVER_URI', 'ldap://localhost:389/');
-define('LDAP_AUTH_USETLS', FALSE); // Enable StartTLS Support for ldap://
-define('LDAP_AUTH_ALLOW_UNTRUSTED_CERT', TRUE); // Allows untrusted certificate
-define('LDAP_AUTH_BASEDN', 'dc=example,dc=com');
-define('LDAP_AUTH_ANONYMOUSBEFOREBIND', FALSE);
-// ??? will be replaced with the entered username(escaped) at login
-define('LDAP_AUTH_SEARCHFILTER', '(&(objectClass=person)(uid=???))');
-
-// Optional configuration
-define('LDAP_AUTH_BINDDN', 'cn=serviceaccount,dc=example,dc=com');
-define('LDAP_AUTH_BINDPW', 'ServiceAccountsPassword');
-define('LDAP_AUTH_LOGIN_ATTRIB', 'uid');
-define('LDAP_AUTH_LOG_ATTEMPTS', FALSE);
-
-// Enable Debug Logging
-define('LDAP_AUTH_DEBUG', FALSE);
-```
+* Required:
+  - `TTRSS_PLUGINS=auth_ldap`
+  - `TTRSS_LDAP_AUTH_SERVER_URI="ldap://localhost:389/"`
+* Optional:
+  - `TTRSS_LDAP_AUTH_USETLS=True` - Enables StartTLS Support for ldap://
+  - `TTRSS_LDAP_AUTH_ALLOW_UNTRUSTED_CERT=True` - Allows untrusted certificate
+  - `TTRSS_LDAP_AUTH_BINDDN="cn=???,dc=example,dc=com"` - bind DN. `???` is replaced with the userId (escaped) trying to login
+  - `TTRSS_LDAP_AUTH_BINDPW="ServiceAccountsPassword"` - bind password. Defaults to password entered by user trying to login
+  - `TTRSS_LDAP_AUTH_BASEDN="dc=example,dc=com"` - base DN to search users
+  - `TTRSS_LDAP_AUTH_SEARCHFILTER="(&(objectClass=person)(uid=???))"` - LDAP search filter. It must return a single user. If not set only a binding is done to loging the user.
+  - `TTRSS_LDAP_AUTH_LOGIN_ATTRIB="cn"` - LDAP attribute with the login ID for tt-rss
+  - `TTRSS_LDAP_AUTH_FULLNAME_ATTRIB="name"` - LDAP attribute with the full username. It will be used to update the user email in tt-rss
+  - `TTRSS_LDAP_AUTH_EMAIL_ATTRIB="mail"` - LDAP attribute with the email. It will be used to update the user email in tt-rss
+  - `TTRSS_LDAP_AUTH_DEBUG=True` - logs login process

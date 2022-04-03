@@ -1,3 +1,9 @@
+2022-04-02  angelnu  <git@angelnu.com>
+
+	* init.php: Version 3.00
+	Mayor restructure to be compatible with .env variables
+	Upgrade full name and email address of user
+
 2014-08-25  hydrian  <ben.tyger@tygerclan.net>
 
 	* init.php: Version 0.5rc2
