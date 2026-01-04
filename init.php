@@ -7,7 +7,7 @@
  * @author angelnu (git@angelnu.com)
  * @copyright GPL2
  *  Requires php-ldap 
- * @version 3.01
+ * @version 3.02
  */
 
 /**
@@ -85,7 +85,7 @@ class Auth_Ldap extends Auth_Base {
     private $_debugMode;
 
     function about() {
-        return array(3.01,
+        return array(3.02,
             "Authenticates against an LDAP server",
             "angelnu",
             true);
