@@ -4,31 +4,10 @@
  * Tiny Tiny RSS plugin for LDAP authentication 
  * @author tsmgeek (tsmgeek@gmail.com)
  * @author hydrian (ben.tyger@tygerclan.net)
+ * @author angelnu (git@angelnu.com)
  * @copyright GPL2
  *  Requires php-ldap 
- * @version 2.00
- */
-/**
- *  Configuration
- *  Put the following options in config.php and customize them for your environment
- *
- * 	define('LDAP_AUTH_SERVER_URI', 'ldaps://LDAPServerHostname:port/');
- * 	define('LDAP_AUTH_USETLS', FALSE); // Enable TLS Support for ldaps://
- * 	define('LDAP_AUTH_ALLOW_UNTRUSTED_CERT', TRUE); // Allows untrusted certificate
- * 	define('LDAP_AUTH_BASEDN', 'dc=example,dc=com');
- * 	define('LDAP_AUTH_ANONYMOUSBEFOREBIND', FALSE);
- * 	// ??? will be replaced with the entered username(escaped) at login 
- * 	define('LDAP_AUTH_SEARCHFILTER', '(&(objectClass=person)(uid=???))');
- * 	// Optional configuration
- *      define('LDAP_AUTH_BINDDN', 'cn=serviceaccount,dc=example,dc=com');
- *      define('LDAP_AUTH_BINDPW', 'ServiceAccountsPassword');
- *      define('LDAP_AUTH_LOGIN_ATTRIB', 'uid');
- *  define('LDAP_AUTH_LOG_ATTEMPTS', FALSE);
- *    Enable Debug Logging
- *  define('LDAP_AUTH_DEBUG', FALSE);
- *    
- *    
- *    
+ * @version 3.00
  */
 
 /**
@@ -45,59 +24,98 @@
  */
 class Auth_Ldap extends Auth_Base {
 
-    private $link;
-    private $host;
-    private $base;
-    private $logClass;
-    private $ldapObj = NULL;
+  	/** LDAP server URI; .env:
+     * LDAP_AUTH_SERVER_URI=ldaps://LDAPServerHostname:port/
+     */
+    const LDAP_AUTH_SERVER_URI = "LDAP_AUTH_SERVER_URI";    
+    
+    /** LDAP server uses TLS; .env:
+     * LDAP_AUTH_USETLS=True
+     */
+    const LDAP_AUTH_USETLS = "LDAP_AUTH_USETLS";
+
+    /** LDAP allows untrusted certificate; .env:
+     * LDAP_AUTH_ALLOW_UNTRUSTED_CERT=True
+     */
+    const LDAP_AUTH_ALLOW_UNTRUSTED_CERT = "LDAP_AUTH_ALLOW_UNTRUSTED_CERT";
+
+    /** LDAP auth bind DN; .env:
+     * LDAP_AUTH_BINDDN='cn=???,ou=users,dc=example,dc=com'
+     * ??? will be replaced with the entered username(escaped) at login
+     */
+    const LDAP_AUTH_BINDDN = "LDAP_AUTH_BINDDN";
+
+    /** LDAP auth bind password; .env:
+     * LDAP_AUTH_BINDPW='ServiceAccountsPassword'
+     */
+    const LDAP_AUTH_BINDPW = "LDAP_AUTH_BINDPW";
+
+    /** LDAP Base DN; .env:
+     * LDAP_AUTH_BASEDN='dc=example,dc=com'
+     */
+    const LDAP_AUTH_BASEDN = "LDAP_AUTH_BASEDN";
+
+    /** LDAP auth searchfilter; .env:
+     * LDAP_AUTH_SEARCHFILTER='(&(objectClass=person)(uid=???))'
+     * ??? will be replaced with the entered username(escaped) at login
+     */
+    const LDAP_AUTH_SEARCHFILTER = "LDAP_AUTH_SEARCHFILTER";
+
+    /** LDAP login attribute; .env:
+     * LDAP_AUTH_LOGIN_ATTRIB='uid'
+     */
+    const LDAP_AUTH_LOGIN_ATTRIB = "LDAP_AUTH_LOGIN_ATTRIB";
+
+    /** LDAP full name attribute; .env:
+     * LDAP_AUTH_FULLNAME_ATTRIB='name'
+     */
+    const LDAP_AUTH_FULLNAME_ATTRIB = "LDAP_AUTH_FULLNAME_ATTRIB";
+
+    /** LDAP email attribute; .env:
+     * LDAP_AUTH_EMAIL_ATTRIB='mail'
+     */
+    const LDAP_AUTH_EMAIL_ATTRIB = "LDAP_AUTH_EMAIL_ATTRIB";
+
+    /** LDAP auth debug; .env:
+     * LDAP_AUTH_DEBUG=True
+     */
+    const LDAP_AUTH_DEBUG = "LDAP_AUTH_DEBUG";
+
+    
     private $_debugMode;
-    private $_serviceBindDN;
-    private $_serviceBindPass;
-    private $_baseDN;
-    private $_useTLS;
-    private $_uri;
-    private $_host;
-    private $_port;
-    private $_scheme;
-    private $_schemaCacheEnabled;
-    private $_anonBeforeBind;
-    private $_allowUntrustedCerts;
-    private $_ldapLoginAttrib;
 
     function about() {
-        return array(0.05,
-            "Authenticates against an LDAP server (configured in config.php)",
-            "hydrian",
+        return array(3.00,
+            "Authenticates against an LDAP server",
+            "angelnu",
             true);
     }
 
     function init($host) {
-        $this->link = $host->get_link();
-        $this->host = $host;
-        //$this->base = new Auth_Base($this->link);
 
+        // Required settings
+        Config::add(self::LDAP_AUTH_SERVER_URI,           "",     Config::T_STRING);
+        // Optional settings
+        Config::add(self::LDAP_AUTH_USETLS,               False,  Config::T_BOOL);
+        Config::add(self::LDAP_AUTH_ALLOW_UNTRUSTED_CERT, False,  Config::T_BOOL);
+        Config::add(self::LDAP_AUTH_BINDDN,               "",     Config::T_STRING);
+        Config::add(self::LDAP_AUTH_BINDPW,               "",     Config::T_STRING);
+        Config::add(self::LDAP_AUTH_BASEDN,               "",     Config::T_STRING);
+        Config::add(self::LDAP_AUTH_SEARCHFILTER,         "",     Config::T_STRING);
+        Config::add(self::LDAP_AUTH_LOGIN_ATTRIB,         "",     Config::T_STRING);
+        Config::add(self::LDAP_AUTH_FULLNAME_ATTRIB,      "name", Config::T_STRING);
+        Config::add(self::LDAP_AUTH_EMAIL_ATTRIB,         "mail", Config::T_STRING);
+        Config::add(self::LDAP_AUTH_DEBUG,                False,  Config::T_BOOL);
+
+        // Check required parameters
+        if (Config::get(self::LDAP_AUTH_SERVER_URI) == "") {
+            Logger::log(E_USER_ERROR, 'Missing ' . self::LDAP_AUTH_SERVER_URI);
+            return;
+        }
+        
+        $this->_debugMode = Config::get(self::LDAP_AUTH_DEBUG);
+        
         $host->add_hook($host::HOOK_AUTH_USER, $this);
-    }
-
-    private function _log($msg, $level = E_USER_NOTICE, $file = '', $line = 0, $context = '') {
-        Logger::log_error($level, $msg, $file, $line, $context);
-    }
-
-    /**
-     * Logs login attempts
-     * @param string $username Given username that attempts to log in to TTRSS
-     * @param string $result "Logging message for type of result. (Success / Fail)"
-     * @return boolean
-     * @deprecated
-     * 
-     * Now that _log support syslog and log levels and graceful fallback user.  
-     */
-    private function _logAttempt($username, $result) {
-
-
-        return trigger_error('TT-RSS Login Attempt: user ' . (string) $username .
-                ' attempted to login (' . (string) $result . ') from ' . (string) $ip, E_USER_NOTICE
-        );
     }
 
     /**
@@ -175,216 +193,223 @@ class Auth_Ldap extends Auth_Base {
             return ldap_escape($subject, $ignore, $flags);
         }    
     }
-        
-    /**
-     * Finds client's IP address
-     * @return string
-     */
-    private function _getClientIP() {
-        if (!empty($_SERVER['HTTP_CLIENT_IP'])) {
-            //check ip from share internet
-
-            $ip = $_SERVER['HTTP_CLIENT_IP'];
-        } elseif (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
-            //to check ip is pass from proxy
-            $ip = $_SERVER['HTTP_X_FORWARDED_FOR'];
-        } else {
-            $ip = $_SERVER['REMOTE_ADDR'];
-        }
-
-        return $ip;
-    }
-
-    private function _getBindDNWord() {
-        return (strlen($this->_serviceBindDN) > 0 ) ? $this->_serviceBindDN : 'anonymous DN';
-    }
-
-    private function _getTempDir() {
-        if (!sys_get_temp_dir()) {
-            $tmpFile = tempnam();
-            $tmpDir = dirname($tmpFile);
-            unlink($tmpFile);
-            unset($tmpFile);
-            return $tmpDir;
-        } else {
-            return sys_get_temp_dir();
-        }
-    }
 
     /**
      * Main Authentication method
      * Required for plugin interface 
      * @param string $login  User's username
      * @param string $password User's password
-     * @param string $service Service to authenticate for
      * @return boolean
      */
-    function authenticate($login, $password, $service = "") {
-        if ($login && $password) {
+    function authenticate($login, $password, $service = '') {
+        if (!$login or !$password) {
+            return False;
+        }
 
-            if (!function_exists('ldap_connect')) {
-                trigger_error('auth_ldap requires PHP\'s PECL LDAP package installed.');
-                return FALSE;
-            }
-
-            //Loading configuration
-            $this->_debugMode = defined('LDAP_AUTH_DEBUG') ?
-                    LDAP_AUTH_DEBUG : FALSE;
-
-            $this->_anonBeforeBind = defined('LDAP_AUTH_ANONYMOUSBEFOREBIND') ?
-                    LDAP_AUTH_ANONYMOUSBEFOREBIND : FALSE;
-
-            $this->_serviceBindDN = defined('LDAP_AUTH_BINDDN') ? LDAP_AUTH_BINDDN : null;
-            $this->_serviceBindPass = defined('LDAP_AUTH_BINDPW') ? LDAP_AUTH_BINDPW : null;
-            $this->_baseDN = defined('LDAP_AUTH_BASEDN') ? LDAP_AUTH_BASEDN : null;
-            if (!defined('LDAP_AUTH_BASEDN')) {
-                $this->_log('LDAP_AUTH_BASEDN is required and not defined.', E_USER_ERROR);
-                return FALSE;
-            } else {
-                $this->_baseDN = LDAP_AUTH_BASEDN;
-            }
-
-            $parsedURI = parse_url(LDAP_AUTH_SERVER_URI);
-            $this->_uri = LDAP_AUTH_SERVER_URI;
-            if ($parsedURI === FALSE) {
-                $this->_log('Could not parse LDAP_AUTH_SERVER_URI in config.php', E_USER_ERROR);
-                return FALSE;
-            }
-            $this->_host = $parsedURI['host'];
-            $this->_scheme = $parsedURI['scheme'];
-
-            if (is_int($parsedURI['port'])) {
-                $this->_port = $parsedURI['port'];
-            } else {
-                $this->_port = ($this->_scheme === 'ldaps') ? 636 : 389;
-            }
-
-            $this->_useTLS = defined('LDAP_AUTH_USETLS') ? LDAP_AUTH_USETLS : FALSE;
-
-            $this->_logAttempts = defined('LDAP_AUTH_LOG_ATTEMPTS') ?
-                    LDAP_AUTH_LOG_ATTEMPTS : FALSE;
-
-            $this->_ldapLoginAttrib = defined('LDAP_AUTH_LOGIN_ATTRIB') ?
-                    LDAP_AUTH_LOGIN_ATTRIB : null;
+        if (!function_exists('ldap_connect')) {
+            Logger::log(E_USER_ERROR, 'auth_ldap requires PHP\'s PECL LDAP package installed.');
+            return False;
+        }
 
 
-            /**
-              Building LDAP connection
-             * */
-            $ldapConnParams = array(
-                'host' => $this->_host,
-                'basedn' => $this->_baseDN,
-                'port' => $this->_port,
-                'starttls' => $this->_useTLS
-            );
+        /**
+             Building LDAP connection
+        * */
+        
+        if ($this->_debugMode)
+            Logger::log(E_USER_NOTICE, 'Trying to connect to ' . Config::get(self::LDAP_AUTH_SERVER_URI));
 
-            if ($this->_debugMode)
-                $this->_log(print_r($ldapConnParams, TRUE), E_USER_NOTICE);
-            $ldapConn = @ldap_connect($this->_uri);
-            if ($ldapConn === FALSE) {
-                $this->_log('Could not connect to LDAP Server: \'' . $this->_host . '\'', E_USER_ERROR);
+        $ldapConn = @ldap_connect(Config::get(self::LDAP_AUTH_SERVER_URI));
+        if ($ldapConn === False) {
+            Logger::log(E_USER_ERROR, 'Could not connect to LDAP Server: ' . Config::get(self::LDAP_AUTH_SERVER_URI));
+            return false;
+        }
+
+        /* Enable LDAP protocol version 3. */
+        if (!@ldap_set_option($ldapConn, LDAP_OPT_PROTOCOL_VERSION, 3)) {
+            Logger::log(E_USER_ERROR, 'Failed to set LDAP Protocol version (LDAP_OPT_PROTOCOL_VERSION) to 3');
+            return false;
+        }
+
+        /* Set referral option */
+        if (!@ldap_set_option($ldapConn, LDAP_OPT_REFERRALS, False)) {
+            Logger::log(E_USER_ERROR, 'Failed to set LDAP Referrals (LDAP_OPT_REFERRALS) to TRUE');
+            return false;
+        }
+
+        /* Set referral option */
+        if (Config::get(self::LDAP_AUTH_ALLOW_UNTRUSTED_CERT)) { 
+            if (!@ldap_set_option($ldapConn, LDAP_OPT_X_TLS_REQUIRE_CERT, LDAP_OPT_X_TLS_NEVER)) {
+                Logger::log(E_USER_ERROR, 'Failed to set LDAP TLS Cert (LDAP_OPT_X_TLS_REQUIRE_CERT) to LDAP_OPT_X_TLS_NEVER');
                 return false;
-            }
-
-            /* Enable LDAP protocol version 3. */
-            if (!@ldap_set_option($ldapConn, LDAP_OPT_PROTOCOL_VERSION, 3)) {
-                $this->_log('Failed to set LDAP Protocol version (LDAP_OPT_PROTOCOL_VERSION) to 3', E_USER_ERROR);
-                return false;
-            }
-
-            /* Set referral option */
-            if (!@ldap_set_option($ldapConn, LDAP_OPT_REFERRALS, FALSE)) {
-                $this->_log('Failed to set LDAP Referrals (LDAP_OPT_REFERRALS) to TRUE', E_USER_ERROR);
-                return false;
-            }
-
-            if (stripos($this->_scheme, "ldaps") === FALSE and $this->_useTLS) {
-                if (!@ldap_start_tls($ldapConn)) {
-                    $this->_log('Unable to force TLS', E_USER_ERROR);
-                    return false;
-                }
-            }
-            $error = @ldap_bind($ldapConn, $this->_serviceBindDN, $this->_serviceBindPass);
-            if ($error === FALSE) {
-                $this->_log(
-                        'LDAP bind(): Bind failed (' . $error . ')with DN ' . $this->_serviceBindDN, E_USER_ERROR
-                );
-                return FALSE;
-            } else {
-                $this->_log(
-                        'Connected to LDAP Server: ' . LDAP_AUTH_SERVER_URI . ' with ' . $this->_getBindDNWord());
-            }
-
-            // Bind with service account if orignal connexion was anonymous
-            /* if (($this->_anonBeforeBind) && (strlen($this->_bindDN > 0))) {
-              $binding=$this->ldapObj->bind($this->_serviceBindDN, $this->_serviceBindPass);
-              if (get_class($binding) !== 'Net_LDAP2') {
-              $this->_log(
-              'Cound not bind service account: '.$binding->getMessage(),E_USER_ERROR);
-              return FALSE;
-              } else {
-              $this->_log('Bind with '.$this->_serviceBindDN.' successful.',E_USER_NOTICE);
-              }
-              } */
-
-            //Searching for user
-            $filterObj = str_replace('???', $this->ldap_escape($login), LDAP_AUTH_SEARCHFILTER);
-            $searchResults = @ldap_search($ldapConn, $this->_baseDN, $filterObj, array('displayName', 'title', 'sAMAccountName', $this->_ldapLoginAttrib), 0, 0, 0);
-            if ($searchResults === FALSE) {
-                $this->_log('LDAP Search Failed on base \'' . $this->_baseDN . '\' for \'' . $filterObj . '\'', E_USER_ERROR);
-                return FALSE;
-            }
-            $count = @ldap_count_entries($ldapConn, $searchResults);
-            if ($count === FALSE) {
-                
-            } elseif ($count > 1) {
-                $this->_log('Multiple DNs found for username ' . (string) $login, E_USER_WARNING);
-                return FALSE;
-            } elseif ($count === 0) {
-                $this->_log('Unknown User ' . (string) $login, E_USER_NOTICE);
-                return FALSE;
-            }
-
-            //Getting user's DN from search
-            $userEntry = @ldap_first_entry($ldapConn, $searchResults);
-            if ($userEntry === FALSE) {
-                $this->_log('LDAP search(): Unable to retrieve result after searching base \'' . $this->_baseDN . '\' for \'' . $filterObj . '\'', E_USER_WARNING);
-                return false;
-            }
-            $userAttributes = @ldap_get_attributes($ldapConn, $userEntry);
-            $userDN = @ldap_get_dn($ldapConn, $userEntry);
-            if ($userDN == FALSE) {
-                $this->_log('LDAP search(): Unable to get DN after searching base \'' . $this->_baseDN . '\' for \'' . $filterObj . '\'', E_USER_WARNING);
-                return false;
-            }
-            //Binding with user's DN. 
-            if ($this->_debugMode)
-                $this->_log('Try to bind with user\'s DN: ' . $userDN);
-            $loginAttempt = @ldap_bind($ldapConn, $userDN, $password);
-            if ($loginAttempt === TRUE) {
-                $this->_log('User: ' . (string) $login . ' authentication successful');
-                if (strlen($this->_ldapLoginAttrib) > 0) {
-                    if ($this->_debugMode)
-                        $this->_log('Looking up TT-RSS username attribute in ' . $this->_ldapLoginAttrib);
-                    $ttrssUsername = $userAttributes[$this->_ldapLoginAttrib][0];
-                    ;
-                    @ldap_close($ldapConn);
-                    if (!is_string($ttrssUsername)) {
-                        $this->_log('Could not find user name attribute ' . $this->_ldapLoginAttrib . ' in LDAP entry', E_USER_WARNING);
-                        return FALSE;
-                    }
-                    return $this->auto_create_user($ttrssUsername);
-                } else {
-                    @ldap_close($ldapConn);
-                    return $this->auto_create_user($login);
-                }
-            } else {
-                @ldap_close($ldapConn);
-                $this->_log('User: ' . (string) $login . ' authentication failed');
-                return FALSE;
             }
         }
-        return false;
+
+        if (stripos(Config::get(self::LDAP_AUTH_SERVER_URI), "ldaps:") === False and Config::get(self::LDAP_AUTH_USETLS)) {
+            if (!@ldap_start_tls($ldapConn)) {
+                Logger::log(E_USER_ERROR, 'Unable to force TLS');
+                return false;
+            }
+        }
+
+        if ($this->_debugMode)
+            Logger::log(E_USER_NOTICE, "LDAP connection configured");
+        
+        
+        /**
+             Binding
+         * */
+
+        // Bind DN
+        $serviceBindDN = str_replace('???', $this->ldap_escape($login), Config::get(self::LDAP_AUTH_BINDDN));
+        
+        // Bind password
+        $serviceBindPass = Config::get(self::LDAP_AUTH_BINDPW) != "" ?
+            Config::get(self::LDAP_AUTH_BINDPW) : $password;            
+        
+
+        if ($this->_debugMode)
+            Logger::log(E_USER_NOTICE, 'Trying to bind with ' . $serviceBindDN);
+        
+        $error = @ldap_bind($ldapConn, $serviceBindDN, $serviceBindPass);
+        if ($error === False) {
+            Logger::log(E_USER_ERROR, 'LDAP bind(): Bind failed (' . $error . ') with DN ' . $serviceBindDN);
+            return False;
+        }
+        
+        if ($this->_debugMode)
+            Logger::log(E_USER_NOTICE, 'LDAP bound');
+        
+        
+        /**
+             Searching user in Base DN
+         * */
+        
+        if (Config::get(self::LDAP_AUTH_SEARCHFILTER) == "") {
+            
+            // If no search filter then we are done (binding enough)            
+            if ($this->_debugMode)
+                Logger::log(E_USER_NOTICE, 'Not searching user as ' . self::LDAP_AUTH_SEARCHFILTER . ' was not provided');
+            
+            @ldap_close($ldapConn);
+            return $this->auto_create_user($login);
+        }
+
+        //Searching for user
+        $filterObj = str_replace('???', $this->ldap_escape($login), Config::get(self::LDAP_AUTH_SEARCHFILTER));
+        $attributes = array(Config::get(self::LDAP_AUTH_LOGIN_ATTRIB),
+                            Config::get(self::LDAP_AUTH_FULLNAME_ATTRIB),
+                            Config::get(self::LDAP_AUTH_EMAIL_ATTRIB));
+        $searchResults = @ldap_search($ldapConn, Config::get(self::LDAP_AUTH_BASEDN), $filterObj, $attributes);
+        if ($searchResults === False) {
+            Logger::log(E_USER_ERROR, 'LDAP Search Failed on base \'' . Config::get(self::LDAP_AUTH_BASEDN) . '\' for \'' . $filterObj . '\'');
+            @ldap_close($ldapConn);
+            return False;
+        }
+        $count = @ldap_count_entries($ldapConn, $searchResults);
+        if ($count === False) {
+            Logger::log(E_USER_ERROR, 'Error searching for ' . (string) $login);
+            @ldap_close($ldapConn);
+            return False;            
+        } elseif ($count > 1) {
+            Logger::log(E_USER_ERROR, 'Multiple DNs found for username ' . (string) $login);
+            @ldap_close($ldapConn);
+            return False;
+        } elseif ($count === 0) {
+            Logger::log(E_USER_ERROR, 'Unknown User ' . (string) $login);
+            @ldap_close($ldapConn);
+            return False;
+        }
+
+        //Getting user's DN from search
+        $userEntry = @ldap_first_entry($ldapConn, $searchResults);
+        if ($userEntry === False) {
+            Logger::log(E_USER_ERROR, 'LDAP search(): Unable to retrieve result after searching base \'' . Config::get(self::LDAP_AUTH_BASEDN) . '\' for \'' . $filterObj . '\'');
+            @ldap_close($ldapConn);
+            return false;
+        }
+        $userAttributes = @ldap_get_attributes($ldapConn, $userEntry);
+        $userDN = @ldap_get_dn($ldapConn, $userEntry);
+        if ($userDN == False) {
+            Logger::log(E_USER_ERROR, 'LDAP search(): Unable to get DN after searching base \'' . Config::get(self::LDAP_AUTH_BASEDN) . '\' for \'' . $filterObj . '\'');
+            @ldap_close($ldapConn);
+            return false;
+        }
+        
+        if ($this->_debugMode)
+            Logger::log(E_USER_NOTICE, 'User found in DN');
+        
+        /**
+             Bind user
+         * */
+        
+        if ($this->_debugMode)
+            Logger::log(E_USER_NOTICE, 'Try to bind with user\'s DN: ' . $userDN);
+
+        
+        $loginAttempt = @ldap_bind($ldapConn, $userDN, $password);
+        if (!$loginAttempt ) {            
+            Logger::log(E_USER_ERROR, 'User: ' . (string) $login . ' authentication failed');
+            @ldap_close($ldapConn);
+            return False;
+        }
+
+        // Conection to LDAP server not needed fter this point
+        @ldap_close($ldapConn);
+
+        if ($this->_debugMode)
+            Logger::log(E_USER_NOTICE, 'User: ' . (string) $login . ' authentication successful');
+   
+
+        /**
+             Create user
+         * */
+        
+        $ttrssUsername = $login;
+        if (Config::get(self::LDAP_AUTH_LOGIN_ATTRIB) != "") {
+            if ($this->_debugMode)
+                Logger::log(E_USER_NOTICE, 'Looking up username attribute: ' . Config::get(self::LDAP_AUTH_LOGIN_ATTRIB));
+            $ttrssUsername = $userAttributes[Config::get(self::LDAP_AUTH_LOGIN_ATTRIB)][0];
+
+            if (!is_string($ttrssUsername)) {
+                Logger::log(E_USER_ERROR, 'Could not find user name attribute ' . Config::get(self::LDAP_AUTH_LOGIN_ATTRIB) . ' in LDAP entry');
+                return False;
+            }
+        }
+        
+        $user_id = $this->auto_create_user($ttrssUsername);
+
+
+         /**
+             Update user
+         * */
+        
+        // update user name
+        if (Config::get(self::LDAP_AUTH_FULLNAME_ATTRIB) != "") {
+            if ($this->_debugMode)
+            Logger::log(E_USER_NOTICE, 'Looking up full name attribute: ' . Config::get(self::LDAP_AUTH_FULLNAME_ATTRIB));
+            $fullname = $userAttributes[Config::get(self::LDAP_AUTH_FULLNAME_ATTRIB)][0];
+
+            if ($fullname){
+                $sth = $this->pdo->prepare("UPDATE ttrss_users SET full_name = ? WHERE id = ?");
+                $sth->execute([$fullname, $user_id]);
+            }
+        }
+
+        // update user mail
+        if (Config::get(self::LDAP_AUTH_EMAIL_ATTRIB) != "") {
+            if ($this->_debugMode)
+            Logger::log(E_USER_NOTICE, 'Looking up email attribute: ' . Config::get(self::LDAP_AUTH_EMAIL_ATTRIB));
+            $email = $userAttributes[Config::get(self::LDAP_AUTH_EMAIL_ATTRIB)][0];
+
+            if ($email){
+                $sth = $this->pdo->prepare("UPDATE ttrss_users SET email = ? WHERE id = ?");
+                $sth->execute([$email, $user_id]);
+            }
+        }
+
+
+        return $user_id;
     }
 
     /**
